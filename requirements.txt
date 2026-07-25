@@ -1,0 +1,46 @@
+# NovaFlow (Next) – Cross-Plattform Requirements
+# Python 3.10+
+#
+# Diese Datei ist bewusst in "gemeinsam" und "je Betriebssystem" aufgeteilt.
+# pip wertet die "; sys_platform == ..." Marker selbst aus, auf einem Mac
+# werden die win32-Pakete also automatisch uebersprungen und umgekehrt.
+
+# --- Core Audio & Transkription (alle Plattformen) ---
+faster-whisper==1.2.1
+sounddevice==0.5.5
+soundfile==0.13.1
+numpy>=2.0.0
+
+# --- Interface & Input (alle Plattformen) ---
+pynput==1.8.1
+pyperclip>=1.8.2
+PyQt6>=6.0.0
+
+# --- LLM Provider (alle Plattformen) ---
+requests>=2.31.0
+openai>=1.0.0
+anthropic>=0.18.0
+
+# --- Config & Environment (alle Plattformen) ---
+python-dotenv>=1.0.0
+keyring>=24.0.0
+
+# --- Windows-spezifisch ---
+pywin32>=306; sys_platform == "win32"
+pycaw>=20230407; sys_platform == "win32"
+
+# --- macOS-spezifisch ---
+pyobjc-framework-Cocoa>=10.0; sys_platform == "darwin"
+
+# --- Linux: bewusst noch keine Extra-Pakete ---
+# Linux-Unterstuetzung ist vorerst nur ein Platzhalter (siehe src/platforms/linux.py),
+# hier kommen erst dann Pakete rein, wenn klar ist welche Distribution/Desktop-
+# Umgebung tatsaechlich unterstuetzt werden soll.
+
+# --- Optional: Ollama (lokal, alle Plattformen) ---
+# Installation ueber https://ollama.ai, kein Python-Paket noetig
+
+# --- Development (optional) ---
+# pytest>=7.0.0
+# black>=23.0.0
+# flake8>=6.0.0

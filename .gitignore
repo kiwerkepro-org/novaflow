@@ -1,0 +1,25 @@
+# Geheimnisse, niemals hochladen
+.env
+
+# Interne Notizen, bewusst nur lokal, nicht fuer GitHub
+NOTES.md
+
+# Build- und Verpackungs-Skripte: bewusst nur lokal, nicht oeffentlich.
+# Die fertige Setup.exe wird stattdessen als GitHub Release verteilt.
+installer.iss
+novaflow.spec
+build.bat
+build_installer.bat
+
+# Python
+__pycache__/
+*.pyc
+
+# Build-Ausgaben (werden bei jedem Release neu erzeugt)
+build/
+dist/
+installer_output/
+
+# Logs und Nutzerdaten
+logs/
+*.log
