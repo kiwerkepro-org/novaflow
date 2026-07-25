@@ -1,0 +1,77 @@
+name: Build macOS App
+
+# Feuert automatisch, sobald publish_release.ps1 (auf JJs Windows-Rechner)
+# ein neues Release veroeffentlicht - JJ muss dafuer nichts extra tun, ein
+# Doppelklick auf build_installer.bat reicht fuer beide Plattformen.
+# workflow_dispatch bleibt zusaetzlich als manueller Testknopf.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release-Tag, an das der Mac-Build angehaengt werden soll (leer = neuestes Release)'
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -r requirements.txt
+          python3 -m pip install pyinstaller
+
+      - name: Build with PyInstaller
+        run: |
+          pyinstaller --noconfirm --windowed --name NovaFlow \
+            --paths src \
+            --add-data "assets:assets" \
+            --add-data ".env.example:." \
+            --hidden-import AppKit \
+            --hidden-import Foundation \
+            --hidden-import objc \
+            --hidden-import PyQt6.QtSvg \
+            --collect-all ctranslate2 \
+            --collect-all faster_whisper \
+            --collect-all tokenizers \
+            --collect-all huggingface_hub \
+            novaflow.pyw
+
+      - name: Package as .dmg
+        run: |
+          cd dist
+          ls -la
+          hdiutil create -volname "NovaFlow" -srcfolder NovaFlow.app -ov -format UDZO NovaFlow-Setup.dmg
+
+      - name: Determine release tag
+        id: tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ github.event.release.tag_name }}" ]; then
+            echo "tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          else
+            LATEST=$(gh release list --limit 1 --json tagName -q '.[0].tagName' --repo "${{ github.repository }}")
+            echo "tag=$LATEST" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ steps.tag.outputs.tag }}" dist/NovaFlow-Setup.dmg --repo "${{ github.repository }}" --clobber
