@@ -52,9 +52,17 @@ jobs:
 
       - name: Package as .dmg
         run: |
-          cd dist
-          ls -la
-          hdiutil create -volname "NovaFlow" -srcfolder NovaFlow.app -ov -format UDZO NovaFlow-Setup.dmg
+          # Staging-Ordner mit App UND Deinstallations-Skript zusammen, da
+          # hdiutil create nur einen einzigen -srcfolder akzeptiert. Ohne
+          # dieses Skript gaebe es auf dem Mac (anders als unter Windows mit
+          # Inno Setup) ueberhaupt keine Moeglichkeit, NovaFlow sauber wieder
+          # loszuwerden.
+          mkdir -p dist/dmg_staging
+          cp -R dist/NovaFlow.app dist/dmg_staging/
+          cp "packaging/macos/Uninstall NovaFlow.command" dist/dmg_staging/
+          chmod +x "dist/dmg_staging/Uninstall NovaFlow.command"
+          ls -la dist/dmg_staging
+          hdiutil create -volname "NovaFlow" -srcfolder dist/dmg_staging -ov -format UDZO dist/NovaFlow-Setup.dmg
 
       - name: Determine release tag
         id: tag
