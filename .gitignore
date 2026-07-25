@@ -10,6 +10,7 @@ installer.iss
 novaflow.spec
 build.bat
 build_installer.bat
+publish_release.ps1
 
 # Python
 __pycache__/
