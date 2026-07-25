@@ -1,0 +1,64 @@
+name: Assemble Release Asset
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to attach the assembled asset to'
+        required: true
+      final_name:
+        description: 'Final asset filename'
+        required: true
+      part_prefix:
+        description: 'Filename prefix of the already-uploaded parts (e.g. NovaFlow-Setup.exe.part)'
+        required: true
+      part_count:
+        description: 'Number of parts to download and concatenate, in order (part1..partN)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  assemble:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download parts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          for i in $(seq 1 "${{ github.event.inputs.part_count }}"); do
+            gh release download "${{ github.event.inputs.tag }}" \
+              --repo "${{ github.repository }}" \
+              --pattern "${{ github.event.inputs.part_prefix }}${i}" \
+              --output "${{ github.event.inputs.part_prefix }}${i}"
+          done
+          ls -la
+
+      - name: Assemble into a single file
+        run: |
+          set -e
+          FILES=""
+          for i in $(seq 1 "${{ github.event.inputs.part_count }}"); do
+            FILES="$FILES ${{ github.event.inputs.part_prefix }}${i}"
+          done
+          cat $FILES > "${{ github.event.inputs.final_name }}"
+          sha256sum "${{ github.event.inputs.final_name }}"
+          ls -la "${{ github.event.inputs.final_name }}"
+
+      - name: Upload assembled asset to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.event.inputs.tag }}" "${{ github.event.inputs.final_name }}" \
+            --repo "${{ github.repository }}" --clobber
+
+      - name: Remove the temporary part assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for i in $(seq 1 "${{ github.event.inputs.part_count }}"); do
+            gh release delete-asset "${{ github.event.inputs.tag }}" "${{ github.event.inputs.part_prefix }}${i}" \
+              --repo "${{ github.repository }}" --yes || true
+          done
