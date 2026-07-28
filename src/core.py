@@ -28,6 +28,8 @@ class WhisperCore:
         self.model_size = model_size or config.get("WHISPER_MODEL_SIZE", "base")
         self.device = config.get("WHISPER_DEVICE", "auto")
         self.model = None
+        # Siehe gleichnamige Erklaerung bei VoxtralCore.
+        self.last_error = None
         self._load_model()
 
     def _load_model(self):
@@ -66,12 +68,16 @@ class WhisperCore:
         Returns:
             Transkribierter Text
         """
+        self.last_error = None
+
         if not self.model:
+            self.last_error = "Whisper-Modell ist nicht geladen"
             logger.error("Modell nicht geladen", "Model not loaded")
             return ""
 
         audio_path = Path(audio_filepath)
         if not audio_path.exists():
+            self.last_error = "Aufnahmedatei nicht gefunden"
             logger.error(
                 f"Audiodatei nicht gefunden: {audio_filepath}",
                 f"Audio file not found: {audio_filepath}"
@@ -103,6 +109,7 @@ class WhisperCore:
             return transcribed_text.strip()
 
         except Exception as e:
+            self.last_error = f"Whisper-Transkription fehlgeschlagen: {str(e)}"
             logger.error(
                 f"Transkriptions-Fehler: {str(e)}",
                 f"Transcription error: {str(e)}"
@@ -127,6 +134,13 @@ class VoxtralCore:
     def __init__(self):
         self.api_key = secure_config.get("OPENROUTER_API_KEY")
         self.language = config.get("LANGUAGE", "de")
+        # Merkt sich, ob der letzte Versuch an einem echten Fehler gescheitert
+        # ist (Netzwerk, API) oder ob schlicht keine Sprache erkannt wurde.
+        # Beides liefert einen leeren Text zurueck, fuehlt sich fuer den
+        # Nutzer aber voellig unterschiedlich an: "Bitte lauter sprechen" ist
+        # bei einem Verbindungsabbruch schlicht falsch und schickt ihn auf
+        # die Suche nach einem Problem, das gar nicht existiert.
+        self.last_error = None
 
     def is_available(self) -> bool:
         return bool(self.api_key)
@@ -141,7 +155,10 @@ class VoxtralCore:
         Returns:
             Transkribierter Text
         """
+        self.last_error = None
+
         if not self.is_available():
+            self.last_error = "Kein OpenRouter API-Schlüssel hinterlegt"
             logger.error(
                 "OPENROUTER_API_KEY nicht gesetzt – Voxtral nicht verfuegbar",
                 "OPENROUTER_API_KEY not set – Voxtral unavailable"
@@ -150,6 +167,7 @@ class VoxtralCore:
 
         audio_path = Path(audio_filepath)
         if not audio_path.exists():
+            self.last_error = "Aufnahmedatei nicht gefunden"
             logger.error(
                 f"Audiodatei nicht gefunden: {audio_filepath}",
                 f"Audio file not found: {audio_filepath}"
@@ -199,7 +217,15 @@ class VoxtralCore:
             return text
 
         except Exception as e:
-            logger.error(f"Voxtral-Fehler: {str(e)}", f"Voxtral error: {str(e)}")
+            text = str(e)
+            if "timed out" in text.lower() or "timeout" in text.lower():
+                self.last_error = (
+                    "Zeitüberschreitung beim Hochladen der Aufnahme. Die Internetverbindung "
+                    "war zu langsam oder ausgelastet, das Diktat konnte nicht übertragen werden."
+                )
+            else:
+                self.last_error = f"Übertragung an OpenRouter fehlgeschlagen: {text}"
+            logger.error(f"Voxtral-Fehler: {text}", f"Voxtral error: {text}")
             return ""
 
     def get_model_info(self) -> dict:

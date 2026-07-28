@@ -63,12 +63,93 @@ class DictionaryStore:
             if e.get("spoken") and e.get("correction")
         }
 
+    def import_entries(self, pairs: list[tuple[str, str]]) -> dict:
+        """Fügt mehrere (spoken, correction)-Paare auf einmal hinzu, z.B. aus
+        einer importierten Vokabular-Datei (siehe parse_vocabulary_text()).
+
+        Ueberspringt Paare, deren "spoken"-Wert (ohne Beachtung von
+        Gross-/Kleinschreibung) bereits existiert, damit ein zweifacher
+        Import derselben Datei keine Duplikate anlegt. Gibt eine kleine
+        Zusammenfassung zurueck, die die Oberflaeche direkt anzeigen kann.
+        """
+        entries = self.get_entries()
+        existing_spoken = {e["spoken"].strip().lower() for e in entries if e.get("spoken")}
+
+        added = 0
+        skipped = 0
+        for spoken, correction in pairs:
+            spoken = spoken.strip()
+            correction = correction.strip()
+            if not spoken or not correction:
+                continue
+            key = spoken.lower()
+            if key in existing_spoken:
+                skipped += 1
+                continue
+            entries.append({"id": str(uuid.uuid4()), "spoken": spoken, "correction": correction})
+            existing_spoken.add(key)
+            added += 1
+
+        if added:
+            self._save(entries)
+
+        return {"added": added, "skipped": skipped}
+
     def _save(self, entries: list) -> None:
         """Speichere Einträge als JSON"""
         _DICT_FILE.write_text(
             json.dumps({"entries": entries}, ensure_ascii=False, indent=2),
             encoding="utf-8"
         )
+
+
+def parse_vocabulary_text(text: str) -> list[tuple[str, str]]:
+    """Liest eine importierte Vokabular-/Wörterbuch-Datei zeilenweise ein.
+
+    Unterstuetzt zwei Zeilenformen, gemischt in derselben Datei:
+
+    - Ein einzelnes Wort/Fachbegriff pro Zeile, z.B. "TensorFlow" -> wird als
+      (spoken, correction) mit identischem Wert auf beiden Seiten
+      uebernommen. Das erzwingt beim Post-Processing (siehe
+      TextProcessor.apply_dictionary) die exakte Schreibweise, sobald das
+      Wort in beliebiger Gross-/Kleinschreibung erkannt wird, genau das ist
+      der Sinn eines "eigenen Vokabulars" fuer Eigennamen/Fachbegriffe, die
+      Whisper sonst regelmaessig anders schreibt.
+    - Ein Korrektur-Paar "falsch erkannt=richtig" pro Zeile, wie es die
+      Wörterbuch-Seite in gui_settings_modal.py auch von Hand anlegt.
+      Getrennt durch "=", ein Tabulator, "->" oder "," (in dieser
+      Reihenfolge geprueft, ein Trennzeichen pro Zeile reicht).
+
+    Leerzeilen und Zeilen, die mit "#" beginnen (Kommentare), werden
+    uebersprungen. Bewusst FEHLERTOLERANT statt streng: eine einzelne
+    kaputte Zeile in einer grossen importierten Liste soll nicht den
+    kompletten Import verhindern, sie wird einfach ignoriert.
+    """
+    pairs: list[tuple[str, str]] = []
+    separators = ("=", "\t", "->", ",")
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+
+        spoken, correction = None, None
+        for sep in separators:
+            if sep in line:
+                left, _, right = line.partition(sep)
+                left, right = left.strip(), right.strip()
+                if left and right:
+                    spoken, correction = left, right
+                break
+
+        if spoken is None:
+            # Kein Trennzeichen gefunden bzw. eine Seite war leer:
+            # die ganze Zeile als Vokabular-Wort behandeln (siehe Docstring).
+            spoken = correction = line
+
+        pairs.append((spoken, correction))
+
+    return pairs
 
 
 # Singleton

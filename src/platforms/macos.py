@@ -109,8 +109,19 @@ class MacAudioMute(AudioMuteBackend):
 
     def __init__(self):
         self._was_muted_before = None
+        self._is_muted_by_us = False
 
     def mute(self) -> None:
+        # Doppeltes Stummschalten wuerde den gemerkten Ausgangszustand
+        # ueberschreiben (dann waere "vorher schon stumm" gemerkt und
+        # unmute() wuerde nichts mehr tun). Gleiche Absicherung wie unter
+        # Windows, siehe platforms/windows.py.
+        if self._is_muted_by_us:
+            logger.debug(
+                "Bereits stummgeschaltet, Ausgangszustand bleibt erhalten.",
+                "Already muted, keeping original state.",
+            )
+            return
         try:
             result = subprocess.run(
                 ["osascript", "-e", "output muted of (get volume settings)"],
@@ -118,12 +129,19 @@ class MacAudioMute(AudioMuteBackend):
             )
             self._was_muted_before = (result.stdout.strip().lower() == "true")
             subprocess.run(["osascript", "-e", "set volume output muted true"], check=False, capture_output=True)
+            self._is_muted_by_us = True
             logger.debug("Lautsprecher stummgeschaltet (osascript)", "Speakers muted (osascript)")
         except Exception as e:
             logger.debug(f"osascript Mute-Fehler: {str(e)}", f"osascript mute error: {str(e)}")
 
     def unmute(self) -> None:
-        if self._was_muted_before:
+        was_muted_before = self._was_muted_before
+        # Zustand IMMER zuruecksetzen, sonst blockiert ein einmaliger Fehler
+        # jedes weitere mute().
+        self._is_muted_by_us = False
+        self._was_muted_before = None
+
+        if was_muted_before:
             # War vorher schon stumm -> Nutzerwunsch respektieren, nichts aendern
             return
         try:

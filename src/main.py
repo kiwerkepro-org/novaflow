@@ -93,10 +93,26 @@ class NovaFlowApp(FlowInterface):
             logger.info("Starte Verarbeitung...", "Starting processing...")
             raw_text = self.core.transcribe_audio(filepath)
             if not raw_text or not raw_text.strip():
-                logger.warning(
-                    "Keine Sprache erkannt. Bitte lauter sprechen.",
-                    "No speech detected. Please speak louder."
-                )
+                # Leerer Text heisst NICHT automatisch "zu leise gesprochen".
+                # Ist die Uebertragung an einem echten Fehler gescheitert
+                # (Netzwerk, API), waere dieser Hinweis irrefuehrend und der
+                # Nutzer sucht den Fehler an der falschen Stelle.
+                failure = getattr(self.core, "last_error", None)
+                if failure:
+                    logger.error(
+                        f"Diktat konnte nicht verarbeitet werden: {failure}",
+                        f"Dictation could not be processed: {failure}",
+                    )
+                else:
+                    logger.warning(
+                        "Keine Sprache erkannt. Bitte lauter sprechen.",
+                        "No speech detected. Please speak louder."
+                    )
+                # Ohne diesen Aufruf bliebe die Flowbar-Anzeige (siehe
+                # interface.show_overlay/hide_overlay) dauerhaft sichtbar,
+                # wenn eine Aufnahme ohne erkennbare Sprache endet - dieser
+                # Pfad rief bisher nur unblock_hotkey() auf (JJ, 2026-07-28).
+                self.hide_overlay()
                 self.unblock_hotkey()
                 return
             logger.info(f"Rohtext: {raw_text[:100]}", f"Raw text: {raw_text[:100]}")
@@ -106,6 +122,7 @@ class NovaFlowApp(FlowInterface):
             self.processor.inject_text(refined_text, interface=self)
         except Exception as e:
             logger.error(f"Fehler bei Audio-Verarbeitung: {str(e)}", f"Error processing audio: {str(e)}")
+            self.hide_overlay()
             self.unblock_hotkey()
         finally:
             if self._processing_lock.locked():

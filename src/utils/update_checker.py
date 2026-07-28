@@ -12,7 +12,7 @@ Modul einfach und leicht testbar bleibt.
 """
 import requests
 
-from utils.paths import get_project_root
+from utils.paths import find_resource
 from utils.logger import logger
 
 REPO = "kiwerkepro-org/novaflow"
@@ -26,9 +26,18 @@ def get_current_version() -> str:
     Build ohne VERSION-Datei), damit ein Update dann garantiert als
     verfuegbar erkannt wird, statt den Check stillschweigend zu verschlucken.
     """
-    version_file = get_project_root() / "VERSION"
+    version_file = find_resource("VERSION")
     if not version_file.exists():
-        return "0.0.0"
+        # Sichtbar machen statt still auf 0.0.0 zu fallen: genau dieser Fall
+        # hat dazu gefuehrt, dass jede Version als veraltet galt und der
+        # Nutzer dauerhaft eine Update-Meldung bekam.
+        logger.warning(
+            f"VERSION-Datei nicht gefunden (gesucht: {version_file}). "
+            "Update-Prüfung wird übersprungen.",
+            f"VERSION file not found (looked in: {version_file}). "
+            "Skipping update check.",
+        )
+        return ""
     return version_file.read_text(encoding="utf-8").strip()
 
 
@@ -71,6 +80,13 @@ def check_for_update(timeout: int = 5) -> dict:
         "release_url": f"https://github.com/{REPO}/releases/latest",
         "error": None,
     }
+
+    # Ohne bekannte eigene Version darf NICHT verglichen werden. Sonst gilt
+    # jede veroeffentlichte Version als neuer und der Nutzer bekommt endlos
+    # Update-Meldungen fuer etwas, das er laengst installiert hat.
+    if not result["current_version"]:
+        result["error"] = "Eigene Version unbekannt (VERSION-Datei fehlt)"
+        return result
 
     try:
         response = requests.get(LATEST_RELEASE_URL, timeout=timeout)

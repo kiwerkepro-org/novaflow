@@ -30,6 +30,48 @@ def get_project_root() -> Path:
     return Path(__file__).resolve().parent.parent.parent
 
 
+def get_resource_dir() -> Path:
+    """Gibt den Ordner mit den MITGELIEFERTEN Dateien zurueck (assets, VERSION,
+    .env.example).
+
+    Das ist bewusst NICHT dasselbe wie get_project_root(). Im gebuendelten
+    Betrieb gibt es zwei verschiedene Orte:
+
+    - beschreibbare Dateien (.env, logs/) liegen neben der NovaFlow.exe,
+      dafuer ist get_project_root() zustaendig
+    - mitgelieferte, nur lesbare Dateien legt PyInstaller dagegen in einen
+      Unterordner, standardmaessig "_internal", und macht dessen Pfad ueber
+      sys._MEIPASS bekannt
+
+    Die Spec-Datei versucht zwar ueber contents_directory="." beides an
+    denselben Ort zu legen, das hat sich im echten Build aber als
+    unzuverlaessig erwiesen (PyInstaller hat trotzdem einen _internal-Ordner
+    angelegt). Folge war, dass die VERSION-Datei nicht gefunden wurde,
+    get_current_version() auf "0.0.0" zurueckfiel und der Update-Checker
+    dauerhaft ein Update gemeldet hat. Diese Funktion sucht deshalb an
+    beiden Orten und funktioniert damit unabhaengig vom Layout.
+    """
+    if getattr(sys, "frozen", False):
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            return Path(meipass).resolve()
+    return get_project_root()
+
+
+def find_resource(name: str) -> Path:
+    """Sucht eine mitgelieferte Datei an allen in Frage kommenden Orten.
+
+    Gibt den ersten Treffer zurueck. Wird nichts gefunden, kommt der Pfad im
+    Ressourcen-Ordner zurueck, damit der Aufrufer eine sinnvolle
+    Fehlermeldung bauen kann.
+    """
+    candidates = [get_resource_dir() / name, get_project_root() / name]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
+
+
 def get_user_data_dir() -> Path:
     """Gibt den Ordner fuer benutzerspezifische Daten zurueck (~/.novaflow).
 

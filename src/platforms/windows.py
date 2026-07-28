@@ -10,6 +10,7 @@ gezeigt, dass dieser Weg auf manchen Windows-Installationen dauerhaft
 wirkungslos ist (siehe CLAUDE.md dort). Zuverlaessig war stattdessen eine
 kleine .vbs-Datei im Windows-Autostart-Ordner, genau das macht diese Klasse.
 """
+import json
 import os
 import sys
 import time
@@ -20,7 +21,7 @@ from pynput.keyboard import Key
 
 from platforms.base import Platform, ClipboardBackend, AudioMuteBackend, AutostartBackend
 from utils.logger import logger
-from utils.paths import get_project_root
+from utils.paths import get_project_root, get_user_data_dir
 
 STARTUP_VBS_NAME = "NovaFlow-Autostart.vbs"
 
@@ -152,10 +153,62 @@ class WindowsAudioMute(AudioMuteBackend):
 
         if self._pycaw_available:
             logger.debug("pycaw Audio-Muting verfügbar", "pycaw audio muting available")
+            self._recover_volume_after_crash()
         else:
             logger.warning(
                 "Kein Audio-Muting verfügbar (pycaw nicht installiert)",
                 "No audio muting available (pycaw not installed)"
+            )
+
+    def _backup_file(self) -> Path:
+        """Datei, in der die Lautstaerke vor dem Stummschalten liegt."""
+        return get_user_data_dir() / "volume_backup.json"
+
+    def _recover_volume_after_crash(self):
+        """Stellt die Lautstaerke wieder her, falls NovaFlow stumm abgestuerzt ist.
+
+        NovaFlow schaltet nicht wirklich stumm, sondern merkt sich die
+        Lautstaerke und setzt sie auf 0 (das ist leiser und stoert andere
+        Programme weniger als ein echtes Mute). Wird NovaFlow mitten in einer
+        Aufnahme beendet oder stuerzt ab, bleibt der Rechner dadurch dauerhaft
+        stumm und der Nutzer sucht den Fehler bei Windows. Deshalb liegt der
+        gemerkte Wert zusaetzlich auf der Festplatte und wird beim naechsten
+        Start automatisch zurueckgesetzt.
+        """
+        backup_file = self._backup_file()
+        if not backup_file.exists():
+            return
+        try:
+            data = json.loads(backup_file.read_text(encoding="utf-8"))
+            saved = float(data.get("volume", -1))
+        except Exception:
+            saved = -1.0
+
+        try:
+            backup_file.unlink()
+        except Exception:
+            pass
+
+        if not (0.0 <= saved <= 1.0):
+            return
+
+        try:
+            volume = self._get_volume_interface()
+            current = volume.GetMasterVolumeLevelScalar()
+            # Nur eingreifen, wenn der Rechner tatsaechlich noch stumm ist.
+            # Hat der Nutzer die Lautstaerke zwischenzeitlich selbst wieder
+            # hochgedreht, wird sein Wert nicht ueberschrieben.
+            if current > 0.001:
+                return
+            volume.SetMasterVolumeLevelScalar(saved, None)
+            logger.info(
+                "Lautstärke nach unsauberem Beenden wiederhergestellt.",
+                "Volume restored after unclean shutdown.",
+            )
+        except Exception as e:
+            logger.debug(
+                f"Lautstärke-Wiederherstellung fehlgeschlagen: {e}",
+                f"Volume recovery failed: {e}",
             )
 
     def _get_volume_interface(self):
@@ -179,23 +232,53 @@ class WindowsAudioMute(AudioMuteBackend):
     def mute(self) -> None:
         if not self._pycaw_available:
             return
+        # Bereits stummgeschaltet? Dann NICHT erneut merken. Sonst wuerde
+        # der gemerkte Originalwert mit der bereits auf 0 gesetzten
+        # Lautstaerke ueberschrieben und spaeter "auf 0 wiederhergestellt".
+        if self._original_volume is not None:
+            logger.debug(
+                "Bereits stummgeschaltet, Originalwert bleibt erhalten.",
+                "Already muted, keeping original value.",
+            )
+            return
         try:
             volume = self._get_volume_interface()
-            self._original_volume = volume.GetMasterVolumeLevelScalar()
+            original = volume.GetMasterVolumeLevelScalar()
+            self._original_volume = original
+            # Vor dem Stummschalten auf die Festplatte schreiben, damit ein
+            # Absturz genau hier nicht zu einem dauerhaft stummen Rechner fuehrt.
+            try:
+                self._backup_file().write_text(
+                    json.dumps({"volume": original}), encoding="utf-8"
+                )
+            except Exception:
+                pass
             volume.SetMasterVolumeLevelScalar(0, None)
             logger.debug("Lautsprecher stummgeschaltet (pycaw)", "Speakers muted (pycaw)")
         except Exception as e:
+            self._original_volume = None
             logger.debug(f"pycaw Mute-Fehler: {str(e)}", f"pycaw mute error: {str(e)}")
 
     def unmute(self) -> None:
         if not self._pycaw_available or self._original_volume is None:
             return
+        target = self._original_volume
+        # Zustand IMMER zuruecksetzen, auch wenn das Setzen unten scheitert.
+        # Sonst blockiert ein einmaliger Fehler jedes weitere mute().
+        self._original_volume = None
         try:
             volume = self._get_volume_interface()
-            volume.SetMasterVolumeLevelScalar(self._original_volume, None)
+            volume.SetMasterVolumeLevelScalar(target, None)
             logger.debug("Lautsprecher reaktiviert (pycaw)", "Speakers unmuted (pycaw)")
         except Exception as e:
             logger.debug(f"pycaw Unmute-Fehler: {str(e)}", f"pycaw unmute error: {str(e)}")
+        finally:
+            try:
+                backup_file = self._backup_file()
+                if backup_file.exists():
+                    backup_file.unlink()
+            except Exception:
+                pass
 
 
 class WindowsAutostart(AutostartBackend):

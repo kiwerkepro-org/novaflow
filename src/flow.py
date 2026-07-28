@@ -33,7 +33,14 @@ MAGIC_PROMPT = (
     "- Alle Substantive/Nomen großschreiben (deutsches Grammatikgesetz)\n"
     "- Satzanfänge großschreiben\n"
     "- Zeichensetzung korrigieren\n"
-    "- Fülllaute (äh, öhm, hmm) entfernen, alle anderen Wörter behalten\n\n"
+    "- Fülllaute (äh, öhm, hmm) entfernen, alle anderen Wörter behalten\n"
+    "- Der Text stammt aus einem einzigen Diktat mit Sprechpausen zum Nachdenken. "
+    "Nur nach einem echten Satzende (Punkt, Ausrufezeichen, Fragezeichen) "
+    "großschreiben. Setzt sich ein Satz nach einer solchen Pause ohne "
+    "Satzendezeichen fort (z.B. nach einem Komma oder einfach mit Leerraum), "
+    "bleibt das nächste Wort klein, auch wenn es im Rohtext großgeschrieben "
+    "ankommt - außer es ist ohnehin ein Nomen, Eigenname oder das Anredepronomen "
+    "'Sie', die bleiben immer groß\n\n"
     "BEISPIELE:\n"
     "Eingabe: dies ist ein test. das system funktioniert gut.\n"
     "Ausgabe: Dies ist ein Test. Das System funktioniert gut.\n\n"
@@ -41,6 +48,8 @@ MAGIC_PROMPT = (
     "Ausgabe: Heute Abend teste ich mein neues Spracherkennungssystem. Es soll Rechtschreibung und Grammatik korrigieren.\n\n"
     "Eingabe: die verdopplung ist weg, jetzt bleibt nur noch die groß-kleinschreibung.\n"
     "Ausgabe: Die Verdopplung ist weg, jetzt bleibt nur noch die Groß- und Kleinschreibung.\n\n"
+    "Eingabe: wir treffen uns morgen, Das wäre gut, um alles vorher zu klären.\n"
+    "Ausgabe: Wir treffen uns morgen, das wäre gut, um alles vorher zu klären.\n\n"
     "Jetzt korrigiere den folgenden Text:\n"
 )
 
@@ -51,7 +60,14 @@ MAGIC_PROMPT_EXPERT = (
     "- Satzanfänge großschreiben\n"
     "- Zeichensetzung korrigieren\n"
     "- Fülllaute (äh, öhm, hmm) entfernen, alle anderen Wörter behalten\n"
-    "- Fachbegriffe und Eigennamen korrekt schreiben\n\n"
+    "- Fachbegriffe und Eigennamen korrekt schreiben\n"
+    "- Der Text stammt aus einem einzigen Diktat mit Sprechpausen zum Nachdenken. "
+    "Nur nach einem echten Satzende (Punkt, Ausrufezeichen, Fragezeichen) "
+    "großschreiben. Setzt sich ein Satz nach einer solchen Pause ohne "
+    "Satzendezeichen fort (z.B. nach einem Komma oder einfach mit Leerraum), "
+    "bleibt das nächste Wort klein, auch wenn es im Rohtext großgeschrieben "
+    "ankommt - außer es ist ohnehin ein Nomen, Eigenname oder das Anredepronomen "
+    "'Sie', die bleiben immer groß\n\n"
     "BEISPIELE:\n"
     "Eingabe: dies ist ein test. das system funktioniert gut.\n"
     "Ausgabe: Dies ist ein Test. Das System funktioniert gut.\n\n"
@@ -59,6 +75,8 @@ MAGIC_PROMPT_EXPERT = (
     "Ausgabe: Heute Abend teste ich mein neues Spracherkennungssystem. Es soll Rechtschreibung und Grammatik korrigieren.\n\n"
     "Eingabe: jetzt start novaflow drücken und dann testen.\n"
     "Ausgabe: Jetzt Start NovaFlow drücken und dann testen.\n\n"
+    "Eingabe: wir treffen uns morgen, Das wäre gut, um alles vorher zu klären.\n"
+    "Ausgabe: Wir treffen uns morgen, das wäre gut, um alles vorher zu klären.\n\n"
     "{vocab_hint}"
     "Jetzt korrigiere den folgenden Text:\n"
 )
@@ -290,6 +308,85 @@ class OllamaProvider(LLMProvider):
 
 
 # =============================================================================
+# IONOS PROVIDER – DSGVO-bewusste Alternative, Modelle laufen auf
+# IONOS-Servern in Deutschland (AI Model Hub, OpenAI-kompatible API).
+# Fuer Nutzer, denen wichtig ist, dass die Text-Veredelung die EU nicht
+# verlaesst. Ersetzt NICHT die Transkription selbst (Voxtral/Whisper),
+# nur den Korrektur-Schritt danach.
+# =============================================================================
+class IonosProvider(LLMProvider):
+    """IONOS AI Model Hub – EU-gehostete Modelle fuer die Text-Veredelung"""
+
+    BASE_URL = "https://openai.inference.de-txl.ionos.com/v1"
+
+    def __init__(self):
+        self.api_key = secure_config.get("IONOS_API_KEY")
+        self.model = config.get("IONOS_MODEL", "mistralai/Mistral-Small-24B-Instruct")
+
+    def is_available(self) -> bool:
+        return bool(self.api_key)
+
+    def refine_text(self, raw_text: str) -> str:
+        """Verfeinert Text via IONOS AI Model Hub (Server in Deutschland)"""
+        if not self.is_available():
+            return raw_text
+        try:
+            import requests
+            logger.info(
+                f"Verfeinere Text mit IONOS ({self.model})...",
+                f"Refining text with IONOS ({self.model})..."
+            )
+
+            vocab_hint = self._get_vocabulary_hint()
+            style_hint = self._get_style_hint()
+            hints = (vocab_hint + style_hint).strip()
+            system_prompt = MAGIC_PROMPT + ("\n" + hints if hints else "")
+
+            response = requests.post(
+                f"{self.BASE_URL}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": self.model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": raw_text}
+                    ],
+                    "max_tokens": 800,
+                    "temperature": 0.1,
+                },
+                timeout=15,
+            )
+
+            if response.status_code != 200:
+                raise Exception(f"HTTP {response.status_code}: {response.text}")
+
+            refined = response.json()["choices"][0]["message"]["content"].strip()
+
+            if len(refined) > len(raw_text) * 2.5:
+                logger.warning(
+                    f"IONOS Ausgabe zu lang ({len(refined)} vs {len(raw_text)}) – Halluzination",
+                    "IONOS output too long – hallucination detected"
+                )
+                return raw_text
+
+            logger.success("Text verfeinert (IONOS)", "Text refined (IONOS)")
+            return refined
+
+        except Exception as e:
+            text = str(e)
+            logger.warning(f"IONOS Fehler: {text}", f"IONOS error: {text}")
+
+        return raw_text
+
+    def get_name(self) -> str:
+        model_short = self.model.split('/')[-1] if '/' in self.model else self.model
+        return f"IONOS ({model_short})"
+
+
+# =============================================================================
 # DISABLED PROVIDER
 # =============================================================================
 class DisabledProvider(LLMProvider):
@@ -319,7 +416,8 @@ class NovaFlowProcessor:
         self.providers = [
             OpenRouterProvider(),       # 0: Cloud via OpenRouter
             OllamaProvider(),           # 1: Offline/Lokal
-            DisabledProvider(),         # 2: Nur Whisper
+            IonosProvider(),            # 2: Cloud via IONOS (Server in Deutschland, DSGVO)
+            DisabledProvider(),         # 3: Nur Whisper
         ]
         self.active_provider = self._select_provider()
         language = config.get("LANGUAGE", "de")
@@ -335,7 +433,8 @@ class NovaFlowProcessor:
         provider_map = {
             "openrouter": self.providers[0],
             "ollama": self.providers[1],
-            "disabled": self.providers[2],
+            "ionos": self.providers[2],
+            "disabled": self.providers[3],
         }
         if preferred in provider_map:
             p = provider_map[preferred]
@@ -354,6 +453,19 @@ class NovaFlowProcessor:
             return raw_text
         processed_text = self.text_processor.process(raw_text)
 
+        # Rohtext-Modus (Tray-Schnellumschaltung, siehe novaflow.pyw): der
+        # KI-Veredelungsschritt wird komplett uebersprungen, das
+        # Post-Processing eine Zeile oben (Fuellwoerter, Woerterbuch,
+        # gesprochene Satzzeichen, Grossschreibung) laeuft trotzdem ganz
+        # normal weiter, das ist bewusst keine "Veredelung" im Sinne dieses
+        # Schalters, sondern rein mechanische Aufbereitung.
+        if config.get_bool("RAW_TEXT_MODE", False):
+            logger.debug(
+                "Rohtext-Modus aktiv - KI-Veredelung uebersprungen",
+                "Raw text mode active - AI refinement skipped",
+            )
+            return self.text_processor.insert_paragraph_breaks(processed_text)
+
         # Kurze Texte (z.B. einzelne Kommandos) ueberspringen den LLM-Schritt,
         # das spart Wartezeit, wenn ohnehin kaum etwas zu korrigieren ist.
         word_count = len(processed_text.split())
@@ -362,10 +474,15 @@ class NovaFlowProcessor:
                 f"Text unter Wortschwelle ({word_count} < {self.word_threshold}) – LLM übersprungen",
                 f"Text below word threshold ({word_count} < {self.word_threshold}) – LLM skipped"
             )
-            return processed_text
+            return self.text_processor.insert_paragraph_breaks(processed_text)
 
         refined_text = self.active_provider.refine_text(processed_text)
-        return refined_text
+        # Absatzbildung laeuft bewusst ALS LETZTER Schritt, unabhaengig vom
+        # gewaehlten Provider (JJ, 2026-07-28): die Veredelung selbst soll
+        # sich nicht um Absaetze kuemmern muessen, das ist reine
+        # Formatierung auf dem fertigen Ergebnis. Greift nicht ein, wenn
+        # bereits ein Zeilenumbruch vorhanden ist (siehe dortiger Docstring).
+        return self.text_processor.insert_paragraph_breaks(refined_text)
 
     def inject_text(self, text: str, interface=None):
         """
@@ -392,8 +509,47 @@ class NovaFlowProcessor:
             # 1. Zwischenablage des Nutzers sichern (Text UND, wo unterstuetzt, Bilder)
             clipboard_backup = clipboard.backup()
 
-            # 2. Diktierten Text zuverlaessig in die Zwischenablage legen
-            clipboard.write_text(text_with_space)
+            # 2. Diktierten Text zuverlaessig in die Zwischenablage legen.
+            #    Der Rueckgabewert MUSS geprueft werden: schlaegt das
+            #    Schreiben fehl (Windows sperrt die Zwischenablage
+            #    zeitweise, wenn ein anderes Programm sie gerade haelt),
+            #    steht dort weiterhin der ALTE Inhalt des Nutzers. Ein
+            #    blindes Strg+V wuerde dann dessen vorherige Zwischenablage
+            #    ins Zielfenster schreiben, im schlimmsten Fall ein vorher
+            #    kopiertes Passwort oder einen internen Text. Lieber gar
+            #    nichts einfuegen als das Falsche.
+            written = clipboard.write_text(text_with_space)
+            if not written:
+                logger.error(
+                    "Text konnte nicht in die Zwischenablage geschrieben werden, "
+                    "es wird nichts eingefügt. Der Text steht im Verlauf zum Kopieren bereit.",
+                    "Could not write text to clipboard, nothing will be pasted. "
+                    "The text is available in the history for copying.",
+                )
+                clipboard.restore(clipboard_backup)
+                return
+
+            # 2b. Gegenprobe direkt vor dem Einfuegen: steht wirklich unser
+            #     Text drin? write_text kann True melden und trotzdem von
+            #     einem anderen Programm sofort wieder ueberschrieben worden
+            #     sein (Zwischenablage-Manager, Fernwartung, Passwort-Tools).
+            try:
+                if clipboard.read_text() != text_with_space:
+                    logger.error(
+                        "Zwischenablage wurde von einem anderen Programm überschrieben, "
+                        "es wird nichts eingefügt. Der Text steht im Verlauf bereit.",
+                        "Clipboard was overwritten by another program, nothing will be "
+                        "pasted. The text is available in the history.",
+                    )
+                    return
+            except Exception:
+                # Laesst sich die Zwischenablage nicht lesen, brechen wir
+                # lieber ab, als auf gut Glueck einzufuegen.
+                logger.error(
+                    "Zwischenablage nicht lesbar, es wird nichts eingefügt.",
+                    "Clipboard not readable, nothing will be pasted.",
+                )
+                return
 
             # 3. Einfuegen (Ctrl+V unter Windows/Linux, Cmd+V unter Mac)
             controller = Controller()

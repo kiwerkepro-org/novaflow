@@ -34,12 +34,35 @@ jobs:
           python3 -m pip install -r requirements.txt
           python3 -m pip install pyinstaller
 
+      - name: Programmsymbol nach .icns umwandeln (optional)
+        continue-on-error: true
+        run: |
+          # PyInstaller braucht unter macOS eine .icns-Datei, im Projekt liegt
+          # nur eine .ico fuer Windows. sips kann das umwandeln. Schlaegt es
+          # fehl, wird der Build trotzdem fortgesetzt, nur eben mit dem
+          # Standardsymbol, das ist reine Kosmetik und darf die
+          # Veroeffentlichung nicht blockieren.
+          sips -s format icns assets/icons/app/novaflow.ico --out NovaFlow.icns
+
       - name: Build with PyInstaller
         run: |
+          # --osx-bundle-identifier ist NICHT optional: macOS merkt sich
+          # erteilte Berechtigungen (Mikrofon, Bedienungshilfen) pro
+          # Bundle-ID. Ohne feste ID vergibt PyInstaller bei jedem Build eine
+          # andere und der Nutzer muesste NovaFlow nach jedem Update erneut
+          # freischalten. Dieselbe ID nutzt auch der LaunchAgent fuer den
+          # Autostart, siehe src/platforms/macos.py (LAUNCH_AGENT_LABEL).
+          ICON_ARG=""
+          if [ -f NovaFlow.icns ]; then
+            ICON_ARG="--icon NovaFlow.icns"
+          fi
           pyinstaller --noconfirm --windowed --name NovaFlow \
+            --osx-bundle-identifier eu.kiw-schmiede.novaflow \
+            $ICON_ARG \
             --paths src \
             --add-data "assets:assets" \
             --add-data ".env.example:." \
+            --add-data "VERSION:." \
             --hidden-import AppKit \
             --hidden-import Foundation \
             --hidden-import objc \
@@ -49,6 +72,26 @@ jobs:
             --collect-all tokenizers \
             --collect-all huggingface_hub \
             novaflow.pyw
+
+      - name: Info.plist ergaenzen (Mikrofonzugriff, Hintergrund-App)
+        run: |
+          PLIST="dist/NovaFlow.app/Contents/Info.plist"
+
+          # NSMicrophoneUsageDescription ist unter macOS PFLICHT. Fehlt der
+          # Eintrag, verweigert das Betriebssystem den Mikrofonzugriff nicht
+          # etwa mit einer Meldung, sondern beendet die Anwendung hart.
+          # NovaFlow waere damit auf dem Mac schlicht unbenutzbar.
+          /usr/libexec/PlistBuddy -c "Delete :NSMicrophoneUsageDescription" "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :NSMicrophoneUsageDescription string 'NovaFlow benoetigt Zugriff auf das Mikrofon, um dein Diktat aufzunehmen und in Text umzuwandeln.'" "$PLIST"
+
+          # NovaFlow ist eine reine Menueleisten-Anwendung ohne eigenes
+          # Hauptfenster, genau wie unter Windows im Tray. LSUIElement sorgt
+          # dafuer, dass sie nicht zusaetzlich im Dock auftaucht.
+          /usr/libexec/PlistBuddy -c "Delete :LSUIElement" "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" "$PLIST"
+
+          echo "--- fertige Info.plist ---"
+          /usr/libexec/PlistBuddy -c "Print" "$PLIST" | head -40
 
       - name: Package as .dmg
         run: |

@@ -186,6 +186,48 @@ class TextProcessor:
 
         return text.strip()
 
+    # Nach jeweils 5 bzw. 6 Saetzen ein Absatz, abwechselnd (JJ, 2026-07-28),
+    # statt starr immer bei derselben Zahl - wirkt dadurch weniger
+    # mechanisch als ein fester Wert.
+    _SENTENCE_SPLIT_RE = re.compile(r'(?<=[.!?])\s+')
+
+    def insert_paragraph_breaks(self, text: str) -> str:
+        """Fuegt bei laengeren Diktaten nach etwa 5 bis 6 Saetzen einen
+        Absatz ein, damit ein langes Diktat nicht als eine einzige, lange
+        durchgehende "Wurscht" erscheint (JJ, 2026-07-28).
+
+        Greift bewusst NICHT ein, wenn der Text bereits einen Zeilenumbruch
+        enthaelt: hat der Nutzer selbst schon "neue Zeile" oder "neuer
+        Absatz" gesprochen (siehe SPOKEN_PUNCTUATION_DE), soll diese
+        bewusste Formatierung nicht durch eine automatische ueberschrieben
+        oder verdoppelt werden. Ebenso bei zu kurzen Texten (weniger als
+        sechs Saetze): dort braucht es keine zusaetzliche Gliederung.
+        """
+        if not text or "\n" in text:
+            return text
+
+        sentences = [s for s in self._SENTENCE_SPLIT_RE.split(text.strip()) if s]
+        if len(sentences) < 6:
+            return text
+
+        out = []
+        count = 0
+        target = 5
+        last_index = len(sentences) - 1
+        for idx, sentence in enumerate(sentences):
+            out.append(sentence)
+            count += 1
+            if idx == last_index:
+                continue
+            if count >= target:
+                out.append("\n\n")
+                count = 0
+                target = 6 if target == 5 else 5
+            else:
+                out.append(" ")
+
+        return "".join(out)
+
     def capitalize_sentences(self, text: str) -> str:
         """Großschreibung nach Satzzeichen und am Zeilenanfang"""
         if not text:

@@ -25,6 +25,12 @@ anthropic>=0.18.0
 python-dotenv>=1.0.0
 keyring>=24.0.0
 
+# --- Verschlüsseltes Backup (alle Plattformen) ---
+# AES-256-GCM fuer utils/backup.py, siehe Kommentar dort: bewusst keine
+# selbstgebaute Verschluesselung aus hashlib/hmac, sondern die etablierte
+# Standardbibliothek fuers Verschluesseln in Python.
+cryptography>=41.0.0
+
 # --- Windows-spezifisch ---
 pywin32>=306; sys_platform == "win32"
 pycaw>=20230407; sys_platform == "win32"

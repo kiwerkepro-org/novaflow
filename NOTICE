@@ -1,0 +1,38 @@
+NovaFlow
+
+Copyright (c) 2026-present KIW-Schmiede (kiwerkepro-org). Alle Rechte, die
+nicht ausdrücklich in der LICENSE-Datei (Elastic License 2.0) eingeräumt
+werden, bleiben vorbehalten.
+
+Herkunft
+
+NovaFlow ist ein Produkt der KIW-Schmiede, veröffentlicht unter
+https://github.com/kiwerkepro-org/novaflow. "NovaFlow" sowie ein
+etwaiges zugehöriges Logo sind Kennzeichen der KIW-Schmiede und werden
+unabhängig von der Software-Lizenz beansprucht (Markenrecht statt
+Urheberrecht).
+
+Was das bedeutet
+
+- Wer NovaFlow oder eine abgeleitete Version weitergibt, muss diese
+  NOTICE-Datei sowie die LICENSE-Datei unverändert mitgeben.
+- Wer den Quellcode verändert, muss das in den veränderten Kopien deutlich
+  kennzeichnen (siehe Abschnitt "Notices" in der LICENSE).
+- Der Name "NovaFlow" und ein zugehöriges Logo dürfen nicht für eine
+  eigene, umbenannte oder weiterverkaufte Version dieser Software oder
+  eines Forks davon verwendet werden, auch nicht in leicht abgewandelter
+  Form, die zu Verwechslungen führen kann.
+- Hinweise auf die Urheberschaft der KIW-Schmiede innerhalb der Software
+  (z.B. Über-Seite, Impressum, Bundle-Kennung eu.kiw-schmiede.novaflow)
+  dürfen nicht entfernt oder verdeckt werden.
+
+Premium-Funktionen
+
+Bestimmte, gesondert gekennzeichnete Zusatzfunktionen von NovaFlow sind
+ausschließlich in einer kostenpflichtigen Premium-Version enthalten und
+über einen serverseitig geprüften Lizenzschlüssel freigeschaltet. Das
+Umgehen, Deaktivieren oder Nachbauen dieser Lizenzprüfung ist nach der
+LICENSE-Datei (Abschnitt "Limitations") ausdrücklich untersagt.
+
+Diese NOTICE-Datei ist eine zusätzliche Bedingung zur LICENSE-Datei,
+keine eigenständige Lizenz.

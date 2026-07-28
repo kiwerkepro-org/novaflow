@@ -33,6 +33,7 @@ class SecureConfig:
     # Sensitive Felder die im Credential-Speicher gespeichert werden
     SENSITIVE_FIELDS = {
         "OPENROUTER_API_KEY",
+        "IONOS_API_KEY",
     }
 
     # Non-sensitive Felder die in .env bleiben
@@ -46,9 +47,14 @@ class SecureConfig:
         "LLM_MODEL",
         "OLLAMA_BASE_URL",
         "OLLAMA_TIMEOUT",
+        "IONOS_MODEL",
         "LLM_WORD_THRESHOLD",
         "LANGUAGE",
         "LOG_LEVEL",
+        "RAW_TEXT_MODE",
+        "UNDO_HOTKEY",
+        "SILENCE_AUTOSTOP_ENABLED",
+        "SILENCE_TIMEOUT_SECONDS",
     }
 
     SERVICE_NAME = "NovaFlow"
